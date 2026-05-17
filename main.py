@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Snake - Retro Pixel Art Edition"""
 
+import os
 import pygame
 import sys
 
@@ -13,6 +14,10 @@ from obstacles import generate_obstacles
 from sounds import init_sounds, play
 from highscore import hs_load, hs_save
 import renderer as R
+import security
+from security import (auth_event, reset_auth, create_token,
+                      send_magic_link, SMTPConfigError, get_smtp_config,
+                      start_auth_server, stop_auth_server)
 
 TRANSITION_MS = 2500   # phase transition announcement duration
 SLOW_MS       = 5000   # slow power-up duration
@@ -57,6 +62,14 @@ def main():
     winner    = None   # None=1P death, 0=draw, 1=P1 wins, 2=P2 wins
     state     = 'menu'
 
+    # ── Auth state ──────────────────────────────────────────────────────────
+    current_user   = None
+    email_input    = ''
+    login_error    = ''
+    cursor_timer   = 0
+    cursor_visible = True
+    auth_port      = int(os.environ.get('AUTH_PORT', 8765))
+
     def reset():
         nonlocal snake1, snake2, food, obstacles, powerup
         nonlocal score, score2, speed, since_speedup, slow_end
@@ -86,10 +99,48 @@ def main():
 
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT:
+                stop_auth_server()
                 pygame.quit(); sys.exit()
 
             if ev.type == pygame.KEYDOWN:
-                if state == 'menu':
+                if state == 'login':
+                    if ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                        addr = email_input.strip()
+                        if '@' not in addr or '.' not in addr.split('@')[-1]:
+                            login_error = 'INVALID EMAIL ADDRESS'
+                        else:
+                            try:
+                                get_smtp_config()
+                                reset_auth()
+                                tok = create_token(addr)
+                                send_magic_link(addr, tok, auth_port)
+                                start_auth_server(auth_port)
+                                login_error = ''
+                                state = 'awaiting_auth'
+                            except SMTPConfigError as e:
+                                login_error = str(e)[:42]
+                            except OSError:
+                                login_error = f'PORT {auth_port} IN USE'
+                            except Exception:
+                                login_error = 'SEND FAILED - CHECK SMTP CONFIG'
+                    elif ev.key == pygame.K_BACKSPACE:
+                        email_input = email_input[:-1]
+                        login_error = ''
+                    elif ev.key == pygame.K_ESCAPE:
+                        stop_auth_server()
+                        pygame.quit(); sys.exit()
+                    else:
+                        if ev.unicode and len(email_input) < 48:
+                            email_input += ev.unicode
+                            login_error = ''
+
+                elif state == 'awaiting_auth':
+                    if ev.key == pygame.K_ESCAPE:
+                        stop_auth_server()
+                        reset_auth()
+                        state = 'login'
+
+                elif state == 'menu':
                     if ev.key in (pygame.K_UP, pygame.K_DOWN):
                         selected_mode = '2p' if selected_mode == '1p' else '1p'
                     elif ev.key == pygame.K_SPACE:
@@ -237,6 +288,18 @@ def main():
             if now - trans_start >= TRANSITION_MS:
                 state = 'playing'
 
+        elif state == 'login':
+            if now - cursor_timer >= 530:
+                cursor_visible = not cursor_visible
+                cursor_timer = now
+
+        elif state == 'awaiting_auth':
+            if auth_event.is_set():
+                current_user = security.auth.authenticated_email
+                stop_auth_server()
+                auth_event.clear()
+                state = 'menu'
+
         # ── Draw ─────────────────────────────────────────────────────────────
         screen.fill(S.BG)
         R.draw_grid(screen)
@@ -248,9 +311,14 @@ def main():
         if snake2:
             R.draw_snake(screen, snake2, head_color=SH2, body_color=SB2, outline_color=SO2)
         R.draw_hud(screen, score, speed, best,
-                   mode=selected_mode, score2=score2 if snake2 else None)
+                   mode=selected_mode, score2=score2 if snake2 else None,
+                   user=current_user)
 
-        if state == 'menu':
+        if state == 'login':
+            R.draw_login(screen, email_input, cursor_visible, login_error or None)
+        elif state == 'awaiting_auth':
+            R.draw_awaiting_auth(screen, email_input.strip())
+        elif state == 'menu':
             R.draw_menu(screen, hs, selected_mode)
         elif state == 'paused':
             R.draw_pause(screen)

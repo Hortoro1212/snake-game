@@ -93,7 +93,7 @@ def draw_obstacles(surf, obstacles):
 
 # ── HUD ─────────────────────────────────────────────────────────────────────
 
-def draw_hud(surf, score, speed, best, mode='1p', score2=None):
+def draw_hud(surf, score, speed, best, mode='1p', score2=None, user=None):
     w   = cfg['win_w']
     h   = cfg['hud_h']
     fs  = 12 if w <= 400 else 14
@@ -107,7 +107,11 @@ def draw_hud(surf, score, speed, best, mode='1p', score2=None):
     else:
         _text(surf, f"SCR {score:04d}", fs, C_GOLD,  w // 5,      mid)
         _text(surf, f"SPD {speed:02d}", fs, C_WHITE, w // 2,      mid)
-        _text(surf, f"BST {best:04d}",  fs, C_WHITE, w * 4 // 5,  mid)
+        if user:
+            display = user if len(user) <= 10 else user[:9] + '~'
+            _text(surf, display,            fs, C_BLUE,  w * 4 // 5, mid)
+        else:
+            _text(surf, f"BST {best:04d}", fs, C_WHITE, w * 4 // 5, mid)
 
 
 # ── Overlays ─────────────────────────────────────────────────────────────────
@@ -175,3 +179,49 @@ def draw_phase_transition(surf, phase_num):
     _text(surf, "BOARD EXPANDED",                 22, C_GREEN, mid, midy +  5)
     _text(surf, "OBSTACLES INCOMING...",           15, C_RED,   mid, midy + 38)
     _text(surf, "MAX SPEED NOW 100",               13, C_WHITE, mid, midy + 62)
+
+
+def draw_login(surf, email_input, cursor_visible, error_msg=None):
+    _overlay(surf, 220)
+    mid = cfg['win_w'] // 2
+    h   = cfg['win_h']
+
+    _text(surf, "SNAKE",         52, C_GREEN, mid, h // 5)
+    _text(surf, "RETRO EDITION", 14, C_GOLD,  mid, h // 5 + 52)
+    _text(surf, "SIGN IN TO PLAY", 16, C_WHITE, mid, h // 2 - 60)
+
+    box_w  = cfg['win_w'] - 60
+    box_x  = 30
+    box_y  = h // 2 - 15
+    box_rect = pygame.Rect(box_x, box_y, box_w, 30)
+    pygame.draw.rect(surf, (30, 45, 30), box_rect)
+    pygame.draw.rect(surf, C_GREEN, box_rect, 1)
+
+    display = email_input + ('|' if cursor_visible else ' ')
+    surf.blit(_font(13).render(display, False, C_GOLD), (box_x + 6, box_y + 7))
+
+    if error_msg:
+        _text(surf, error_msg, 12, C_RED, mid, h // 2 + 30)
+
+    _text(surf, "TYPE EMAIL  THEN  ENTER", 11, C_WHITE, mid, h - 48)
+    _text(surf, "ESC  quit",               11, C_WHITE, mid, h - 28)
+
+
+def draw_awaiting_auth(surf, email):
+    _overlay(surf, 220)
+    mid = cfg['win_w'] // 2
+    h   = cfg['win_h']
+
+    _text(surf, "MAGIC LINK SENT", 30, C_GREEN, mid, h // 4)
+
+    pulse = abs(pygame.time.get_ticks() % 1200 - 600) / 600
+    brightness = int(100 + 100 * pulse)
+    _text(surf, "[ @ ]", 36, (brightness, brightness, brightness), mid, h // 2 - 20)
+
+    _text(surf, "CHECK YOUR INBOX", 14, C_WHITE, mid, h // 2 + 30)
+    shown = email if len(email) <= 28 else email[:26] + '..'
+    _text(surf, shown,             12, C_GOLD,  mid, h // 2 + 55)
+
+    _text(surf, "CLICK THE LINK IN YOUR EMAIL", 11, C_WHITE, mid, h - 65)
+    _text(surf, "THEN RETURN HERE",             11, C_WHITE, mid, h - 45)
+    _text(surf, "ESC  cancel",                  11, C_WHITE, mid, h - 25)
